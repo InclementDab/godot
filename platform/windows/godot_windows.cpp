@@ -31,6 +31,7 @@
 #include "os_windows.h"
 
 #include "main/main.h"
+#include "thirdparty/lpp/include/LPP_API.h"
 
 #include <locale.h>
 #include <stdio.h>
@@ -203,9 +204,17 @@ int _main() {
 		return 0;
 	}
 
+	lpp::LppDefaultAgent agent = lpp::LppCreateDefaultAgent(nullptr, L"C:\\Dev\\proj\\godot\\bin");
+
+	if (lpp::LppIsValidDefaultAgent(&agent)) {
+	 	agent.EnableModule(lpp::LppGetCurrentModulePath(), lpp::LPP_MODULES_OPTION_ALL_IMPORT_MODULES, nullptr, nullptr);
+	}
+
 	result = widechar_main(argc, wc_argv);
 
 	LocalFree(wc_argv);
+
+	lpp::LppDestroyDefaultAgent(&agent);
 	return result;
 }
 

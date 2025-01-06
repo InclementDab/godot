@@ -67,6 +67,8 @@
 #include "scene/gui/tree.h"
 #include "servers/debugger/servers_debugger.h"
 #include "servers/display_server.h"
+#include "editor/debugger/editor_debugger_node.h"
+#include "modules/gdscript/gdscript.h"
 
 using CameraOverride = EditorDebuggerNode::CameraOverride;
 
@@ -317,6 +319,10 @@ void ScriptEditorDebugger::_thread_debug_enter(uint64_t p_thread_id) {
 	}
 	inspector->clear_cache(); // Take a chance to force remote objects update.
 	_put_msg("get_stack_dump", Array(), p_thread_id);
+}
+
+void ScriptEditorDebugger::_code_editor_autocomplete(void *p_ud, const String &p_code, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_forced) {
+
 }
 
 void ScriptEditorDebugger::_select_thread(int p_index) {
@@ -1005,6 +1011,81 @@ void ScriptEditorDebugger::_breakpoint_tree_clicked() {
 	if (selected->has_meta("line")) {
 		emit_signal(SNAME("breakpoint_selected"), selected->get_parent()->get_text(0), int(selected->get_meta("line")));
 	}
+}
+
+void ScriptEditorDebugger::_code_complete_scripts(void *p_ud, const String &p_code, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_force) {
+	ScriptEditorDebugger *ste = (ScriptEditorDebugger*)p_ud;
+	ste->_code_complete_script(p_code, r_options, r_force);
+}
+
+void ScriptEditorDebugger::_code_complete_script(const String &p_code, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_force) {
+	String hint;
+	Error err = script->get_language()->complete_code(p_code, "", SceneTree::get_singleton(), r_options, r_force, hint);
+
+	if (err == OK) {
+		console_edit->get_text_editor()->set_code_hint(hint);
+	}
+}
+
+void ScriptEditorDebugger::_execute_console_code() {
+	if (peer.is_null()) {
+		print_error("cannot execute code, game not connected");
+		return;
+	}
+
+	if (!peer->is_peer_connected()) {
+		print_error("cannot execute code, peer not connected");
+		return;
+	}
+
+	List<StringName> r_global_classes;
+	ScriptServer::get_global_class_list(&r_global_classes);
+	for (StringName n: r_global_classes) {
+		print_line(n);
+	}
+
+	GDScriptLanguage *lang = GDScriptLanguage::get_singleton();
+	if (!lang) {
+		print_line("no lang");
+		return;
+	}
+
+	String function = "@tool\nclass_name Test\nextends SceneTree\nstatic func main() -> void:\n";
+	CodeEdit *code_edit = console_edit->get_text_editor();
+	for (int i = 0; i < code_edit->get_line_count(); i++) {
+		function += "\t" + code_edit->get_line(i);
+	}
+	
+	print_line(function);
+	ScriptServer::set_scripting_enabled(true);
+
+	if (SceneTree::get_singleton()) {
+
+		//print_line(SceneTree::get_singleton()->get_current_scene()->get_script_instance());
+		print_line(SceneTree::get_singleton()->get_script_instance());
+
+		Ref<GDScript> scr = memnew(GDScript);
+		scr->set_source_code(function);
+		Error err = scr->reload();
+		if (err) {
+			print_line("Error: ", err);
+		} else {
+			print_line("validity ", scr->is_valid());
+			SceneTree::get_singleton()->set_script(scr);
+			print_line(SceneTree::get_singleton()->get_script_instance());
+			SceneTree::get_singleton()->get_script_instance()->call("main");
+		}
+
+	}
+
+	//lang->call()
+
+	//ScriptServer::thread_enter
+	//ScriptServer::add_global_class();
+
+	//Ref<CSharpScript> script;
+	//script->set_source_code();
+
 }
 
 String ScriptEditorDebugger::_format_frame_text(const ScriptLanguage::StackInfo *info) {
@@ -1830,6 +1911,49 @@ ScriptEditorDebugger::ScriptEditorDebugger() {
 
 	InspectorDock::get_inspector_singleton()->connect("object_id_selected", callable_mp(this, &ScriptEditorDebugger::_remote_object_selected));
 	EditorFileSystem::get_singleton()->connect("resources_reimported", callable_mp(this, &ScriptEditorDebugger::_resources_reimported));
+
+	{	// Console
+		VBoxContainer *vbc = memnew(VBoxContainer);
+		vbc->set_name(TTR("Console"));
+
+		Control *dbg = vbc;
+		HBoxContainer *console_buttons_hbox = memnew(HBoxContainer);
+		console_buttons_hbox->set_h_size_flags(SIZE_EXPAND_FILL);
+
+		Button *exec_button = memnew(Button);
+		exec_button->set_text(TTR("Execute"));
+		exec_button->connect(SceneStringName(pressed), callable_mp(this, &ScriptEditorDebugger::_execute_console_code));
+		console_buttons_hbox->add_child(exec_button);
+
+		console_edit = memnew(CodeTextEditor);
+		console_edit->set_h_size_flags(SIZE_EXPAND_FILL);
+		console_edit->set_v_size_flags(SIZE_EXPAND_FILL);
+		console_edit->set_code_complete_func(_code_complete_scripts, this);
+
+		console_edit->add_theme_constant_override("separation", 2);
+		console_edit->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+
+		console_edit->get_text_editor()->set_draw_breakpoints_gutter(true);
+		console_edit->get_text_editor()->set_draw_executing_lines_gutter(true);
+		//console_edit->get_text_editor()->connect("breakpoint_toggled", callable_mp(this, &ScriptTextEditor::_breakpoint_toggled));
+		//console_edit->get_text_editor()->connect("caret_changed", callable_mp(this, &ScriptTextEditor::_on_caret_moved));
+		//console_edit->connect("navigation_preview_ended", callable_mp(this, &ScriptTextEditor::_on_caret_moved));
+
+		console_edit->get_text_editor()->add_gutter(1);
+		console_edit->get_text_editor()->set_gutter_name(1, "connection_gutter");
+		console_edit->get_text_editor()->set_gutter_draw(1, false);
+		console_edit->get_text_editor()->set_gutter_overwritable(1, true);
+		console_edit->get_text_editor()->set_gutter_type(1, TextEdit::GUTTER_TYPE_ICON);
+
+		console_edit->get_text_editor()->set_symbol_lookup_on_click_enabled(true);
+		console_edit->get_text_editor()->set_symbol_tooltip_on_hover_enabled(true);
+		console_edit->get_text_editor()->set_context_menu_enabled(false);
+
+		vbc->add_child(console_buttons_hbox);
+		vbc->add_child(console_edit);
+		
+		tabs->add_child(dbg);
+	}
 
 	{ //debugger
 		VBoxContainer *vbc = memnew(VBoxContainer);

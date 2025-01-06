@@ -38,6 +38,8 @@
 #include "editor/debugger/editor_debugger_server.h"
 #include "scene/gui/button.h"
 #include "scene/gui/margin_container.h"
+#include "editor/plugins/script_text_editor.h"
+#include "editor/code_editor.h"
 
 class Tree;
 class LineEdit;
@@ -93,6 +95,9 @@ private:
 	Button *le_set = nullptr;
 	Button *le_clear = nullptr;
 	Button *export_csv = nullptr;
+
+	CodeTextEditor *console_edit = nullptr;
+	Ref<Script> script = nullptr;
 
 	VBoxContainer *errors_tab = nullptr;
 	Tree *error_tree = nullptr;
@@ -237,11 +242,18 @@ private:
 
 	void _breakpoint_tree_clicked();
 
+	static void _code_complete_scripts(void *p_ud, const String &p_code, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_force);
+	void _code_complete_script(const String &p_code, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_force);
+	void _execute_console_code();
+
 	String _format_frame_text(const ScriptLanguage::StackInfo *info);
 
 	void _thread_debug_enter(uint64_t p_thread_id);
 
+	void _code_editor_autocomplete(void *p_ud, const String &p_code, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_forced);
+
 protected:
+
 	void _notification(int p_what);
 	static void _bind_methods();
 

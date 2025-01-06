@@ -193,6 +193,7 @@ opts.Add(BoolVariable("debug_paths_relative", "Make file paths in debug symbols 
 opts.Add(EnumVariable("lto", "Link-time optimization (production builds)", "none", ("none", "auto", "thin", "full")))
 opts.Add(BoolVariable("production", "Set defaults to build Godot for use in production", False))
 opts.Add(BoolVariable("threads", "Enable threading support", True))
+opts.Add(BoolVariable("use_hotpatch", "Enable Hotpatches Support through LivePP", False))
 
 # Components
 opts.Add(BoolVariable("deprecated", "Enable compatibility code for deprecated and removed features", True))
@@ -712,10 +713,19 @@ if env.msvc:
     else:
         env.Append(LINKFLAGS=["/DEBUG:NONE"])
 
-    if env["optimize"].startswith("speed"):
+    if env["use_hotpatch"]:
+        print("Using HOTPATCHES!!")
+        env.Append(LINKFLAGS=["/FUNCTIONPADMIN"])
+        env.Append(CCFLAGS=["/Gm-", "/Gy", "/Gw"])
+
+    if env["optimize"].startswith("speed") or env["use_hotpatch"]:
         env.Append(CCFLAGS=["/O2"])
-        env.Append(LINKFLAGS=["/OPT:REF"])
-        if env["optimize"] == "speed_trace":
+        if env["use_hotpatch"]:
+            env.Append(LINKFLAGS=["/OPT:NOREF"])
+        else:
+            env.Append(LINKFLAGS=["/OPT:REF"])
+        
+        if env["optimize"] == "speed_trace" or env["use_hotpatch"]:
             env.Append(LINKFLAGS=["/OPT:NOICF"])
     elif env["optimize"] == "size":
         env.Append(CCFLAGS=["/O1"])
